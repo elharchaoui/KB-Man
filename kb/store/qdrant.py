@@ -32,7 +32,8 @@ class QdrantStore:
 
     async def setup(self) -> None:
         """Create collections if they don't exist."""
-        existing = {c.name for c in await self._client.get_collections().then(lambda r: r.collections)}
+        response = await self._client.get_collections()
+        existing = {c.name for c in response.collections}
         for name in (COLLECTION_SUMMARIES, COLLECTION_CHUNKS):
             if name not in existing:
                 await self._client.create_collection(

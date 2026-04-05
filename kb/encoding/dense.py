@@ -12,7 +12,8 @@ class DenseEncoder:
         self._dimensions = config.embedding_dimensions
 
     async def encode(self, text: str) -> list[float]:
-        return await self.encode_batch([text])[0]
+        results = await self.encode_batch([text])
+        return results[0]
 
     async def encode_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
