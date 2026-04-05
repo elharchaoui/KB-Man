@@ -83,15 +83,16 @@ def _meta_line(r: ScoredResult) -> str:
 
 def _top_doc_titles(results: list[ScoredResult]) -> str:
     seen: dict[str, float] = {}
+    best_result: dict[str, ScoredResult] = {}
     for r in results:
         doc_id = r.document_id
-        title = r.payload.get("title", doc_id[:8])
         if doc_id not in seen or r.score > seen[doc_id]:
             seen[doc_id] = r.score
+            best_result[doc_id] = r
     titles = sorted(seen.keys(), key=lambda d: seen[d], reverse=True)[:3]
-    return ", ".join(
-        f"\"{results[0].payload.get('title', t[:8])}\" ({seen[t]:.2f})"
-        for t in titles
-        for results in [[r for r in results if r.document_id == t][:1]]
-        if results
-    )
+    parts = []
+    for t in titles:
+        r = best_result[t]
+        title = r.payload.get("title", t[:8])
+        parts.append(f'"{title}" ({seen[t]:.2f})')
+    return ", ".join(parts)

@@ -87,6 +87,10 @@ async def add(ctx: click.Context, input: str, tags: tuple[str, ...]) -> None:
     click.echo(f"\n✓ Stored: {result.title!r} [{result.type}]")
     click.echo(f"  document_id : {result.document_id}")
     click.echo(f"  chunks      : {result.child_chunks_stored}")
+    if result.auto_tags:
+        click.echo(f"  auto-tags   : {', '.join(result.auto_tags)}")
+    if list(tags):
+        click.echo(f"  user-tags   : {', '.join(tags)}")
 
 
 @cli.command()
@@ -132,6 +136,8 @@ async def search(ctx: click.Context, query: str, k: int, raw: bool) -> None:
         )
         click.echo(f"   source: {source}")
         click.echo(f"   doc_id: {r.document_id}")
+        if r.level == "chunk" and r.payload.get("chunk_header"):
+            click.echo(f"   section: {r.payload['chunk_header']}")
         click.echo()
         # Print a preview of the text
         preview = r.text[:300].replace("\n", " ")

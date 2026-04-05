@@ -24,31 +24,42 @@ def _token_count(text: str) -> int:
     return len(_enc.encode(text))
 
 
-def chunk(text: str, input_type: InputType, config: Config) -> list[str]:
+def chunk(text: str, input_type: InputType, config: Config) -> list[tuple[str, str | None]]:
+    """
+    Return a list of (chunk_text, section_header) pairs.
+    section_header is the nearest Markdown ## / ### above the chunk, or None.
+    """
     if _token_count(text) <= config.child_chunk_size:
-        return [text]
+        return [(text, None)]
     if input_type == "code":
         return _chunk_code(text, config.child_chunk_size)
     return _chunk_text(text, config.child_chunk_size)
 
 
-def _chunk_text(text: str, max_tokens: int) -> list[str]:
+def _chunk_text(text: str, max_tokens: int) -> list[tuple[str, str | None]]:
     # Split on markdown headers first (hard boundary)
     sections = _split_on_headers(text)
-    chunks: list[str] = []
-    for section in sections:
-        chunks.extend(_split_section(section, max_tokens))
-    return [c.strip() for c in chunks if c.strip()]
+    chunks: list[tuple[str, str | None]] = []
+    for section_text, header in sections:
+        for piece in _split_section(section_text, max_tokens):
+            piece = piece.strip()
+            if piece:
+                chunks.append((piece, header))
+    return chunks
 
 
-def _split_on_headers(text: str) -> list[str]:
+def _split_on_headers(text: str) -> list[tuple[str, str | None]]:
+    """Return (section_text, header_or_None) pairs split at Markdown headers."""
     parts = _HEADER_RE.split(text)
     headers = _HEADER_RE.findall(text)
-    sections: list[str] = []
+    sections: list[tuple[str, str | None]] = []
     for i, part in enumerate(parts):
-        header = headers[i - 1] if i > 0 else ""
-        sections.append((header + "\n" + part).strip() if header else part.strip())
-    return [s for s in sections if s]
+        header: str | None = headers[i - 1] if i > 0 else None
+        # Keep the header line in the text for retrieval context
+        body = (header + "\n" + part).strip() if header else part.strip()
+        if body:
+            sections.append((body, header))
+    return sections
 
 
 def _split_section(text: str, max_tokens: int) -> list[str]:
@@ -109,36 +120,43 @@ def _hard_split(text: str, max_tokens: int) -> list[str]:
     ]
 
 
-def _chunk_code(text: str, max_tokens: int) -> list[str]:
+def _chunk_code(text: str, max_tokens: int) -> list[tuple[str, str | None]]:
     if _token_count(text) <= max_tokens:
-        return [text]
+        return [(text, None)]
 
-    # Protect fenced blocks from splitting
     boundaries = list(_CODE_BOUNDARY_RE.finditer(text))
     if not boundaries:
-        return _hard_split(text, max_tokens)
+        return [(piece, None) for piece in _hard_split(text, max_tokens)]
 
-    sections: list[str] = []
+    # Each section's header is its first (boundary) line, e.g. "def foo(x):"
+    sections: list[tuple[str, str | None]] = []
     for i, match in enumerate(boundaries):
         start = match.start()
         end = boundaries[i + 1].start() if i + 1 < len(boundaries) else len(text)
-        sections.append(text[start:end].strip())
+        section_text = text[start:end].strip()
+        # First line is the function/class signature
+        header = section_text.splitlines()[0] if section_text else None
+        sections.append((section_text, header))
 
-    chunks: list[str] = []
+    chunks: list[tuple[str, str | None]] = []
     buffer = ""
-    for section in sections:
-        candidate = (buffer + "\n\n" + section).strip() if buffer else section
+    buffer_header: str | None = None
+    for section_text, header in sections:
+        candidate = (buffer + "\n\n" + section_text).strip() if buffer else section_text
         if _token_count(candidate) <= max_tokens:
             buffer = candidate
+            if buffer_header is None:
+                buffer_header = header
         else:
             if buffer:
-                chunks.append(buffer)
-            # section itself too long — hard split as last resort
-            if _token_count(section) <= max_tokens:
-                buffer = section
+                chunks.append((buffer, buffer_header))
+            if _token_count(section_text) <= max_tokens:
+                buffer = section_text
+                buffer_header = header
             else:
-                chunks.extend(_hard_split(section, max_tokens))
+                chunks.extend((piece, header) for piece in _hard_split(section_text, max_tokens))
                 buffer = ""
+                buffer_header = None
     if buffer:
-        chunks.append(buffer)
+        chunks.append((buffer, buffer_header))
     return chunks

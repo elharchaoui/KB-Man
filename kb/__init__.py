@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 from kb.config import Config
 from kb.encoding.dense import DenseEncoder
 from kb.encoding.sparse import SparseEncoder
-from kb.ingest import chunker, detector, normalizer, summarizer
+from kb.ingest import chunker, detector, normalizer, summarizer, tagger
 from kb.ingest.fetcher import fetch_url
 from kb.injection import injector
 from kb.models import AddResult, DeleteResult, Document, RetrievalOutput
@@ -84,9 +84,17 @@ class KnowledgeBase:
         else:
             normalized = raw_text
 
-        # Generate summary (parent) and chunks (children)
-        summary_text = await summarizer.summarize(normalized, input_type, self._llm, self._llm_model)
-        chunks = chunker.chunk(normalized, input_type, self._config)
+        # Summary + auto-tags run concurrently (one fewer serial LLM round-trip)
+        import asyncio as _asyncio
+        summary_text, auto_tags = await _asyncio.gather(
+            summarizer.summarize(normalized, input_type, self._llm, self._llm_model),
+            tagger.suggest_tags(normalized, input_type, self._llm, self._llm_model),
+        )
+
+        # Merge: user-provided tags first, then auto-tags (no duplicates)
+        all_tags = list(dict.fromkeys(tags + [t for t in auto_tags if t not in tags]))
+
+        chunks = chunker.chunk(normalized, input_type, self._config)  # list[(text, header)]
 
         document_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -101,7 +109,7 @@ class KnowledgeBase:
             "title": title,
             "source": input if input_type == "url" else "user",
             "type": input_type,
-            "tags": tags,
+            "tags": all_tags,
             "added_at": now,
             "text": summary_text,
         }
@@ -117,25 +125,29 @@ class KnowledgeBase:
         )
 
         # Encode and store chunks
-        chunk_dense_vecs = await self._dense.encode_batch(chunks)
+        chunk_texts = [text for text, _ in chunks]
+        chunk_dense_vecs = await self._dense.encode_batch(chunk_texts)
         chunk_points = []
-        for idx, (chunk_text, dense_vec) in enumerate(zip(chunks, chunk_dense_vecs)):
+        for idx, ((chunk_text, chunk_header), dense_vec) in enumerate(zip(chunks, chunk_dense_vecs)):
             chunk_id = str(uuid.uuid4())
             sparse_vec = self._sparse_chunks.encode(chunk_text)
             self._sparse_chunks.add(chunk_id, chunk_text)
+            payload = {
+                "document_id": document_id,
+                "chunk_index": idx,
+                "source": input if input_type == "url" else "user",
+                "type": input_type,
+                "added_at": now,
+                "text": chunk_text,
+            }
+            if chunk_header is not None:
+                payload["chunk_header"] = chunk_header
             chunk_points.append({
                 "id": chunk_id,
                 "dense": dense_vec,
                 "sparse_indices": sparse_vec.indices,
                 "sparse_values": sparse_vec.values,
-                "payload": {
-                    "document_id": document_id,
-                    "chunk_index": idx,
-                    "source": input if input_type == "url" else "user",
-                    "type": input_type,
-                    "added_at": now,
-                    "text": chunk_text,
-                },
+                "payload": payload,
             })
 
         await self._store.upsert_chunks(chunk_points)
@@ -145,7 +157,7 @@ class KnowledgeBase:
             title=title,
             source=input if input_type == "url" else "user",
             type=input_type,
-            tags=tags,
+            tags=all_tags,
             added_at=datetime.fromisoformat(now),
             fetched_at=fetched_at,
         )
@@ -157,6 +169,7 @@ class KnowledgeBase:
             type=input_type,
             parent_stored=1,
             child_chunks_stored=len(chunks),
+            auto_tags=auto_tags,
         )
 
     async def search(self, query: str, k: int | None = None) -> RetrievalOutput:

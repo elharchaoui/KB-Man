@@ -48,6 +48,7 @@ class AddResult:
     type: Literal["url", "text", "code"]
     parent_stored: int
     child_chunks_stored: int
+    auto_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
