@@ -2,13 +2,13 @@
 
 **Status:** Draft  
 **Date:** 2026-04-04  
-**Project:** nanobot
+**Project:** KB-Man
 
 ---
 
 ## Overview
 
-A personal knowledge base layer for nanobot. The user explicitly curates knowledge — URLs, documents, notes, code snippets — and the agent queries it on their behalf. The KB is user-driven: nothing is stored without an explicit instruction.
+A personal knowledge base that runs locally. The user explicitly curates knowledge — URLs, documents, notes, code snippets — and queries it on demand. The KB is user-driven: nothing is stored without an explicit instruction.
 
 ---
 
@@ -213,7 +213,7 @@ If the dense embedding API call fails, raise immediately. Nothing is stored. No 
 Single store for both vector and keyword search. No server process required.
 
 - **Library:** `qdrant-client`
-- **Persistence path:** `~/.nanobot/kb/qdrant/`
+- **Persistence path:** `~/.kb/qdrant/`
 - **Two collections:** `parent_summaries`, `child_chunks`
 - Each collection holds both dense and sparse vectors per point
 
@@ -464,10 +464,9 @@ kb_list() → { document_id, title, source, type, tags, added_at }[]
 ## File Layout
 
 ```
-~/.nanobot/
-└── kb/
-    ├── qdrant/           # Qdrant local persistence directory
-    └── config.json       # tunable parameters
+~/.kb/
+├── qdrant/               # Qdrant local persistence directory
+└── config.json           # tunable parameters
 ```
 
 ---
