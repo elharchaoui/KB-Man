@@ -63,6 +63,22 @@ class KnowledgeBase:
         self._sparse_summaries.bootstrap(texts["summaries"])
         self._sparse_chunks.bootstrap(texts["chunks"])
 
+        # Rehydrate in-memory document index from persisted summaries
+        for payload in await self._store.fetch_all_documents():
+            doc_id = payload.get("document_id")
+            if not doc_id:
+                continue
+            self._documents[doc_id] = Document(
+                document_id=doc_id,
+                title=payload.get("title", "untitled"),
+                source=payload.get("source", "user"),
+                type=payload.get("type", "text"),
+                tags=payload.get("tags", []),
+                added_at=datetime.fromisoformat(payload["added_at"]),
+                fetched_at=datetime.fromisoformat(payload["fetched_at"])
+                if payload.get("fetched_at") else None,
+            )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------

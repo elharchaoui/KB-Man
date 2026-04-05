@@ -190,6 +190,23 @@ class QdrantStore:
 
         return {"summaries": summaries, "chunks": chunks}
 
+    async def fetch_all_documents(self) -> list[dict]:
+        """Return full payloads from parent_summaries for session rehydration."""
+        documents = []
+        offset = None
+        while True:
+            result, offset = await self._client.scroll(
+                COLLECTION_SUMMARIES,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+            )
+            for p in result:
+                documents.append(p.payload)
+            if offset is None:
+                break
+        return documents
+
     async def collection_stats(self) -> dict:
         s = await self._client.get_collection(COLLECTION_SUMMARIES)
         c = await self._client.get_collection(COLLECTION_CHUNKS)
