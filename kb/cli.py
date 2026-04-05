@@ -14,6 +14,24 @@ from kb.config import Config
 from kb.injection import injector
 
 
+def _load_dotenv() -> None:
+    """Load .env from cwd or any parent directory (walk up to fs root)."""
+    current = Path.cwd()
+    for directory in [current, *current.parents]:
+        env_file = directory / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+            break
+
+
+_load_dotenv()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
